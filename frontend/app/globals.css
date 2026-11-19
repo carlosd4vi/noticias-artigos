@@ -1,0 +1,31 @@
+@import "tailwindcss";
+
+body {
+  font-family: var(--font-sans), system-ui, sans-serif;
+  background-color: #f8fafc;
+  color: #1e293b;
+}
+
+.headline-font {
+  font-family: var(--font-serif), Georgia, serif;
+  line-height: 1.35;
+}
+
+.masthead-logo {
+  font-family: var(--font-logo), Georgia, serif;
+  letter-spacing: -0.02em;
+}
+
+.card-article {
+  transition: all 0.2s ease-in-out;
+}
+
+.card-article:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 20px -3px rgba(0, 0, 0, 0.06), 0 4px 6px -4px rgba(0, 0, 0, 0.04);
+}
+
+.action-icon-btn:hover svg {
+  stroke: #d97706;
+  color: #d97706;
+}
