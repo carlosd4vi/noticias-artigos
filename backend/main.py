@@ -1,6 +1,7 @@
 # main.py
 import os
-from fastapi import FastAPI, Depends, Query, HTTPException, status
+import time
+from fastapi import FastAPI, Depends, Query, HTTPException, status, Response, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from passlib.context import CryptContext
@@ -23,25 +24,52 @@ app = FastAPI()
 SECRET_KEY = os.getenv('SECRET_KEY')
 ALGORITHM = "HS256"
 
+MAX_TENTATIVAS = 5
+TEMPO_BLOQUEIO_SEGUNDOS = 5 * 60  # 5 minutos
+
+# Armazena por IP: {"127.0.0.1": {"tentativas": 0, "bloqueado_ate": 0.0}}
+tentativas_login: dict[str, dict] = {}
+
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/token")
 
-def verificar_jwt(token: str = Depends(oauth2_scheme)):
-    """Esta função intercepta a requisição e verifica se o token é válido"""
+def get_current_user(request: Request):
+    token = request.cookies.get("access_token")
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Não autenticado",
+        )
+
     try:
-        # decodificar o token
+        # Usa as mesmas constantes SECRET_KEY e ALGORITHM que você já usa ao gerar o token
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        return payload # Retorna quem está logado
+        username: str = payload.get("sub")
+        if username is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token inválido",
+            )
+        return username
     except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token expirado")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Sessão expirada. Faça login novamente.",
+        )
     except jwt.InvalidTokenError:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token inválido")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token inválido",
+        )
 
 # Configuração do CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
-    allow_credentials=True,
-    allow_methods=["*"], # Permite todos os métodos (GET, POST, etc)
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ],
+    allow_credentials=True,  # Obrigatório para cookies
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
@@ -79,12 +107,46 @@ def gerar_hash_senha(senha_texto_puro):
     return pwd_context.hash(senha_texto_puro)
 
 @app.post("/api/v1/login")
-def login(dados_login: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-    # 1. Busca o usuário no banco de dados pelo email/username
-    usuario = db.query(Usuario).filter(Usuario.username == dados_login.username).first()
+def login(request: Request, response: Response, form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+
+    client_ip = request.client.host if request.client else "unknown"
+    agora = time.time()
+    registro = tentativas_login.get(client_ip, {"tentativas": 0, "bloqueado_ate": 0.0})
+
+    # 1. Verifica se o IP está bloqueado
+    if registro["bloqueado_ate"] > agora:
+        restante = int(registro["bloqueado_ate"] - agora)
+        minutos, segundos = divmod(restante, 60)
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Muitas tentativas. Tente novamente em {minutos}m {segundos:02d}s.",
+        )
+    usuario = db.query(Usuario).filter(Usuario.username == form_data.username).first()
+
+    if not usuario or not pwd_context.verify(form_data.password, usuario.password_hash):
+        registro["tentativas"] += 1
+
+        if registro["tentativas"] >= MAX_TENTATIVAS:
+            registro["bloqueado_ate"] = agora + TEMPO_BLOQUEIO_SEGUNDOS
+            registro["tentativas"] = 0
+            tentativas_login[client_ip] = registro
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Limite de 5 tentativas atingido. Tente novamente em 5m 00s.",
+            )
+
+        tentativas_login[client_ip] = registro
+        restantes = MAX_TENTATIVAS - registro["tentativas"]
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Usuário ou senha inválidos. ({restantes} tentativa(s) restante(s))",
+        )
+
+    # 3. Se acertou, limpa o histórico de erros do IP
+    tentativas_login.pop(client_ip, None)
     
     # 2. Confere se o usuário existe e se a senha está correta
-    if not usuario or not pwd_context.verify(dados_login.password, usuario.password_hash):
+    if not usuario or not pwd_context.verify(form_data.password, usuario.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, 
             detail="Username ou senha incorretos"
@@ -94,8 +156,27 @@ def login(dados_login: OAuth2PasswordRequestForm = Depends(), db: Session = Depe
     expiracao = datetime.datetime.utcnow() + datetime.timedelta(hours=1)
     dados = {"sub": usuario.username, "exp": expiracao}
     token = jwt.encode(dados, SECRET_KEY, algorithm=ALGORITHM)
-    
-    return {"access_token": token, "token_type": "bearer"}
+
+    response.set_cookie(
+        key="access_token",
+        value=token,
+        httponly=True,     # Impede acesso via document.cookie (proteção contra XSS)
+        samesite="lax",    # Proteção contra CSRF
+        secure=False,      # Troque para True em produção (HTTPS)
+        max_age=60 * 60 * 24,  # 24 horas (em segundos)
+        path="/",
+    )
+    return {"message": "Login realizado com sucesso"}
+
+# Verificar se está logado
+@app.get("/api/v1/me")
+def usuario_logado(usuario_atual: str = Depends(get_current_user)):
+    return {"username": usuario_atual}
+
+@app.post("/api/v1/logout")
+def logout(response: Response):
+    response.delete_cookie(key="access_token", path="/")
+    return {"message": "Logout realizado"}    
 
 
 @app.post("/api/v1/register", response_model=UsuarioResponse, status_code=status.HTTP_201_CREATED)
@@ -130,11 +211,11 @@ def registrar_usuario(usuario: UsuarioCreate, db: Session = Depends(get_db)):
 
     # Criar Post
 
-@app.post("/api/v1/posts", response_model=PostResponse, status_code=status.HTTP_201_CREATED)
+@app.post("/api/v1/posts", response_model=PostResponse)
 def criar_post(
-    post: PostCreate, # Valida o corpo da requisição (titulo e descricao)
-    db: Session = Depends(get_db), # Injeta o banco
-    usuario_logado: dict = Depends(verificar_jwt) # EXIGE O TOKEN JWT AQUI!
+    post: PostCreate,
+    db: Session = Depends(get_db),
+    usuario_atual: str = Depends(get_current_user), # <-- Bloqueia quem não tem o cookie válido
 ):
     # Cria o modelo para o banco de dados
     novo_post = Post(
@@ -154,10 +235,10 @@ def criar_post(
 
 @app.patch("/api/v1/posts/{post_id}", response_model=PostResponse)
 def atualizar_post(
-    post_id: UUID, 
-    post_atualizado: PostUpdate, 
-    db: Session = Depends(get_db), 
-    usuario_logado: dict = Depends(verificar_jwt) # Exige o Token
+    post_id: UUID,
+    post: PostUpdate,
+    db: Session = Depends(get_db),
+    usuario_atual: str = Depends(get_current_user), # <-- Protegida
 ):
     # Busca o post
     post_salvo = db.query(Post).filter(Post.id == post_id).first()
@@ -184,11 +265,11 @@ def atualizar_post(
 
     # Deletar Post
 
-@app.delete("/api/v1/posts/{post_id}", status_code=status.HTTP_204_NO_CONTENT)
+@app.delete("/api/v1/posts/{post_id}")
 def deletar_post(
-    post_id: UUID, 
-    db: Session = Depends(get_db), 
-    usuario_logado: dict = Depends(verificar_jwt) # Exige o Token
+    post_id: UUID,
+    db: Session = Depends(get_db),
+    usuario_atual: str = Depends(get_current_user), # <-- Protegida
 ):
     # Procuea Post
     post_salvo = db.query(Post).filter(Post.id == post_id).first()
