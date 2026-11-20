@@ -2,9 +2,16 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { LoginModal } from "@/components/LoginModal"; // 1. Importe aqui
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export function Header() {
+  const router = useRouter();
   const [dataAtual, setDataAtual] = useState("");
+  const [loginAberto, setLoginAberto] = useState(false); // 2. Estado do modal
+  const [verificando, setVerificando] = useState(false);
 
   useEffect(() => {
     const formatada = new Intl.DateTimeFormat("pt-BR", {
@@ -16,7 +23,31 @@ export function Header() {
     setDataAtual(formatada);
   }, []);
 
+  const handleAcesso = async () => {
+    if (verificando) return;
+    setVerificando(true);
+
+    try {
+      const res = await fetch(`${API_URL}/api/v1/me`, {
+        method: "GET",
+        credentials: "include", // Envia o cookie HttpOnly para o FastAPI validar
+      });
+
+      if (res.ok) {
+        router.push("/admin");
+        return;
+      }
+    } catch {
+      // Se der erro de rede, abre o modal normalmente
+    } finally {
+      setVerificando(false);
+    }
+
+    setLoginAberto(true);
+  };
+
   return (
+    <>
     <header className="bg-white border-b border-slate-200 sticky top-0 z-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-20 border-b border-slate-100">
@@ -51,10 +82,11 @@ export function Header() {
             <span className="hidden xl:inline-block text-xs font-medium text-slate-500 capitalize tracking-wide">
               {dataAtual}
             </span>
-            <Link
-              className="flex flex-col items-center justify-center text-slate-700 hover:text-slate-950 px-2 py-1 rounded transition-colors group"
-              href="/login"
-            >
+            <button
+          type="button"
+          onClick={handleAcesso}
+          disabled={verificando}
+          className="flex flex-col items-center justify-center text-slate-700 hover:text-slate-950 px-2 py-1 rounded transition-colors group cursor-pointer">
               <svg
                 className="w-6 h-6 text-slate-700 group-hover:text-black transition-colors"
                 fill="none"
@@ -71,7 +103,7 @@ export function Header() {
               <span className="text-[10px] font-bold tracking-tight uppercase mt-0.5">
                 Entrar
               </span>
-            </Link>
+            </button>
           </div>
         </div>
 
@@ -89,5 +121,7 @@ export function Header() {
         </nav>
       </div>
     </header>
+    <LoginModal aberto={loginAberto} onFechar={() => setLoginAberto(false)} />
+    </>
   );
 }
