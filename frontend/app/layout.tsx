@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import type { Metadata } from "next";
 import { Cinzel, Lora, Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
@@ -38,7 +39,9 @@ export default function RootLayout({
       className={`${cinzel.variable} ${lora.variable} ${plusJakarta.variable}`}
     >
       <body className="min-h-screen flex flex-col bg-slate-50 text-slate-800 antialiased selection:bg-amber-100 selection:text-amber-900">
-        <Header />   {/* 2. Coloque antes do conteúdo */}
+        <Suspense fallback={<div className="h-[121px] bg-white border-b border-slate-200" />}>
+        <Header />
+        </Suspense>   {/* 2. Coloque antes do conteúdo */}
         {children}   {/* Aqui o Next.js injeta o page.tsx */}
         <Footer />   {/* 2. Coloque depois do conteúdo */}
       </body>
