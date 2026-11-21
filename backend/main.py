@@ -75,13 +75,17 @@ app.add_middleware(
 
 # Todos os Posts
 
-@app.get("/api/v1/posts", response_model=List[PostResponse])
-def get_posts(db: Session = Depends(get_db), limite: int = Query(10)
-    ):
-    posts = (
+@app.get("/api/v1/posts", response_model=list[PostResponse])
+def listar_posts(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(10, ge=1, le=50),
+    db: Session = Depends(get_db),
+):
+    return (
         db.query(Post)
-        .order_by(Post.data_criada.desc()) # Ordena do mais recente para o mais antigo
-        .limit(limite)                     # Limita a quantidade de resultados
+        .order_by(Post.data_criada.desc())
+        .offset(skip)
+        .limit(limit)
         .all()
     )
     return posts
@@ -251,7 +255,7 @@ def atualizar_post(
 
     # Pega apenas os dados que o usuário enviou na requisição
     # exclude_unset=True garante que campos não enviados sejam ignorados
-    dados_para_atualizar = post_atualizado.model_dump(exclude_unset=True)
+    dados_para_atualizar = post.model_dump(exclude_unset=True)
     
     # Substitui os dados antigos pelos novos
     for chave, valor in dados_para_atualizar.items():
