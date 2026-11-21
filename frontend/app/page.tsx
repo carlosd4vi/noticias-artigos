@@ -1,5 +1,5 @@
 import { getPosts } from "@/lib/api";
-import { ArticleCard } from "@/components/ArticleCard";
+import { ListaArtigos } from "@/components/ListaArtigos";
 import { Sidebar } from "@/components/Sidebar";
 
 export default async function HomePage() {
@@ -41,14 +41,9 @@ export default async function HomePage() {
                 </p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {posts.map((post) => (
-                  <ArticleCard key={post.id} post={post} />
-                ))}
-              </div>
+              <ListaArtigos postsIniciais={posts} />
             )}
           </div>
-
           <Sidebar recomendados={posts} />
         </div>
       </main>
