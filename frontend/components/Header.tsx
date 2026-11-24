@@ -69,25 +69,6 @@ export function Header() {
                   Noticias Artigos
                 </span>
               </Link>
-              <button
-                aria-label="Pesquisar notícias"
-                className="p-2 text-slate-700 hover:text-black focus:outline-none rounded-md transition-colors"
-                type="button"
-              >
-                <svg
-                  className="w-5 h-5"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.2"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              </button>
             </div>
 
             <div className="flex items-center gap-3 sm:gap-5">
