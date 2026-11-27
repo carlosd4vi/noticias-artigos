@@ -2,9 +2,8 @@
 
 import { useState } from "react";
 import { ArticleCard } from "@/components/ArticleCard";
-import type { Post } from "@/lib/api";
+import { getPosts, type Post } from "@/lib/api";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 const LIMITE = 10;
 
 export function ListaArtigos({ postsIniciais }: { postsIniciais: Post[] }) {
@@ -15,15 +14,9 @@ export function ListaArtigos({ postsIniciais }: { postsIniciais: Post[] }) {
   const carregarMais = async () => {
     setCarregando(true);
     try {
-      const res = await fetch(
-        `${API_URL}/api/v1/posts?skip=${posts.length}&limit=${LIMITE}`,
-        { cache: "no-store" }
-      );
-      if (res.ok) {
-        const novos: Post[] = await res.json();
-        setPosts((prev) => [...prev, ...novos]);
-        setTemMais(novos.length === LIMITE);
-      }
+      const novos = await getPosts(LIMITE, posts.length);
+      setPosts((prev) => [...prev, ...novos]);
+      setTemMais(novos.length === LIMITE);
     } finally {
       setCarregando(false);
     }
